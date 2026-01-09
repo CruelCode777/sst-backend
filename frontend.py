@@ -2,69 +2,65 @@ import streamlit as st
 import requests
 
 # --- CONFIGURAÇÃO ---
-# ⚠️ COLOQUE SEU LINK DO RENDER AQUI (Sem a barra no final)
-API_URL = "https://sst-auditor.onrender.com"  # Exemplo. Ponha o seu!
+# ⚠️ CONFIRA SE ESTE É O SEU LINK DO RENDER (SEM BARRA NO FINAL)
+API_URL = "https://sst-backend.onrender.com"
 
 st.set_page_config(page_title="SST.AI Suite", page_icon="🛡️", layout="wide")
-URL_FUNDO = "https://github.com/CruelCode777/sst-backend/blob/main/Gemini_Generated_Image_16naot16naot16na.png?raw=true"
+
+# --- ESTILO CYBERPUNK (CSS) ---
+URL_FUNDO = "https://img.freepik.com/free-photo/futuristic-wind-energy-park-at-night_23-2149341234.jpg?w=1380"
 
 st.markdown(f"""
 <style>
-    /* 1. Imagem de Fundo Principal */
+    /* 1. Imagem de Fundo */
     .stApp {{
         background-image: url("{URL_FUNDO}");
         background-attachment: fixed;
         background-size: cover;
     }}
 
-    /* 2. Escurecer o Fundo para o Texto ficar Legível (Overlay) */
+    /* 2. Overlay Escuro para ler o texto */
     .main .block-container {{
-        background-color: rgba(0, 0, 0, 0.85); /* Fundo Preto 85% transparente */
+        background-color: rgba(0, 0, 0, 0.85);
         padding: 2rem;
         border-radius: 15px;
-        border: 1px solid #1e3a8a; /* Borda Azul Tech */
+        border: 1px solid #1e3a8a;
     }}
 
-    /* 3. Estilo da Barra Lateral */
+    /* 3. Barra Lateral Escura */
     section[data-testid="stSidebar"] {{
-        background-color: rgba(17, 24, 39, 0.95); /* Cinza Quase Preto */
+        background-color: rgba(17, 24, 39, 0.95);
         border-right: 1px solid #374151;
     }}
 
-    /* 4. Títulos e Textos */
-    h1, h2, h3 {{
-        color: #00e5ff !important; /* Azul Ciano Neon */
-        font-family: 'Orbitron', sans-serif; /* Fonte Futurista (se disponível) */
-    }}
-    p, label {{
-        color: #e5e7eb !important; /* Branco Gelo */
-    }}
-
-    /* 5. Botão "Gerar Relatório" (Estilo Cyberpunk) */
-    div.stButton > button {{
-        background: linear-gradient(45deg, #1e3a8a, #dc2626); /* Degradê Azul-Vermelho */
-        color: white;
-        border: none;
-        padding: 0.5rem 1rem;
-        border-radius: 5px;
-        font-weight: bold;
-        transition: transform 0.2s;
-        width: 100%;
-    }}
-    div.stButton > button:hover {{
-        transform: scale(1.05); /* Efeito de Zoom ao passar o mouse */
-        box-shadow: 0 0 15px #00e5ff; /* Brilho Neon */
-    }}
+    /* 4. Cores de Texto Neon */
+    h1, h2, h3 {{ color: #00e5ff !important; font-family: sans-serif; }}
+    p, label, .stMarkdown {{ color: #e5e7eb !important; }}
     
-    /* 6. Inputs (Caixas de Texto) */
+    /* 5. Inputs Escuros */
     .stTextInput > div > div > input {{
         background-color: #374151;
         color: white;
         border: 1px solid #4b5563;
     }}
+    
+    /* 6. Botão Neon */
+    div.stButton > button {{
+        background: linear-gradient(45deg, #1e3a8a, #dc2626);
+        color: white;
+        border: none;
+        width: 100%;
+        padding: 0.5rem;
+        font-weight: bold;
+    }}
+    div.stButton > button:hover {{
+        box-shadow: 0 0 15px #00e5ff;
+        color: white;
+    }}
 </style>
 """, unsafe_allow_html=True)
-# --- FIM DO BLOCO DE ESTILO ---
+
+# --- CABEÇALHO ---
 st.title("🛡️ SST.AI - Suíte de Engenharia")
 st.markdown("Gerador de Documentação Técnica e Auditoria Automatizada")
 
@@ -142,7 +138,7 @@ with col2:
             try:
                 tipo_backend = "geral"
                 
-                # CHAMADAS DE API (CÁLCULOS)
+                # 1. CHAMADAS DE CÁLCULO
                 if "CIPA" in tipo_relatorio:
                     tipo_backend = "cipa"
                     resp = requests.post(f"{API_URL}/api/cipa", json={"cnae": input_cnae, "funcionarios": int(input_funcs)})
@@ -170,7 +166,7 @@ with col2:
                             st.stop()
                         st.success(f"Brigada Mínima: {dados_para_envio.get('qtd')} brigadistas")
                 
-                # GERAÇÃO DO PDF
+                # 2. GERAÇÃO DO PDF
                 payload = {
                     "tipo": tipo_backend,
                     "meta": {
@@ -196,10 +192,3 @@ with col2:
                     
             except Exception as e:
                 st.error(f"Erro Crítico: {e}")
-                        
-                except Exception as e:
-                    st.error(f"Erro Crítico: {e}")
-
-
-
-
