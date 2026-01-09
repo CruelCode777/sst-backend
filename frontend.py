@@ -7,7 +7,7 @@ API_URL = "https://sst-ai-suite.onrender.com"
 st.set_page_config(page_title="SST.AI Suite", page_icon="🛡️", layout="wide")
 
 # --- ESTILO CYBERPUNK (CSS) ---
-URL_FUNDO = "https://github.com/CruelCode777/sst-backend/blob/main/Gemini_Generated_Image_16naot16naot16na.png?raw=true"
+URL_FUNDO = ""
 
 st.markdown(f"""
 <style>
@@ -191,6 +191,7 @@ with col2:
                     
             except Exception as e:
                 st.error(f"Erro Crítico: {e}")
+
 
 
 
