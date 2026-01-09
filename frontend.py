@@ -6,7 +6,7 @@ import requests
 # ⚠️ Mantenha o link do seu backend aqui
 API_URL = "https://sst-backend-cxtpxb6lsng6vjjyqnaujp.onrender.com"
 
-st.set_page_config(page_title="SST.AI Auditor", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="SST.AI Suite", page_icon="🛡️", layout="wide")
 
 # --- ESTILO CSS (Visual Profissional/Limpo) ---
 st.markdown("""
@@ -348,3 +348,4 @@ else:
             
             except Exception as e:
                 st.error(f"Erro: {e}")
+
