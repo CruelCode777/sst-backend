@@ -5,3 +5,4 @@ reportlab
 python-multipart
 streamlit
 requests
+streamlit-option-menu
