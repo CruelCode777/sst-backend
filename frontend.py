@@ -50,7 +50,7 @@ with col2:
                     # ATENÇÃO: Verifique no seu /docs qual o nome exato do endpoint
                     # Vou assumir que é /gerar_relatorio, mas pode ser outro.
                     # ---------------------------------------------------------
-                    response = requests.post(f"{API_URL}/gerar_pdf", json=dados)
+                    response = requests.post(f"{API_URL}/api/gerar_relatorio", json=dados)
                     
                     if response.status_code == 200:
                         st.success("Relatório Gerado com Sucesso!")
@@ -68,4 +68,5 @@ with col2:
                 except Exception as e:
 
                     st.error(f"Erro de conexão: {e}")
+
 
