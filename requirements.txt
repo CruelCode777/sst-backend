@@ -7,3 +7,4 @@ streamlit
 requests
 streamlit-option-menu
 pypdf
+aiofiles
