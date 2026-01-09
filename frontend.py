@@ -3,11 +3,11 @@ import requests
 
 # --- CONFIGURAÇÃO ---
 # ⚠️ CONFIRA SE ESTE É O SEU LINK DO RENDER (SEM BARRA NO FINAL)
-API_URL = https://sst-ai-suite.onrender.com
+API_URL = https://sst-backend.onrender.com
 st.set_page_config(page_title="SST.AI Suite", page_icon="🛡️", layout="wide")
 
 # --- ESTILO CYBERPUNK (CSS) ---
-URL_FUNDO = "https://img.freepik.com/free-photo/futuristic-wind-energy-park-at-night_23-2149341234.jpg?w=1380"
+URL_FUNDO = "https://github.com/CruelCode777/sst-backend/blob/main/Gemini_Generated_Image_16naot16naot16na.png?raw=true"
 
 st.markdown(f"""
 <style>
@@ -191,4 +191,5 @@ with col2:
                     
             except Exception as e:
                 st.error(f"Erro Crítico: {e}")
+
 
