@@ -7,54 +7,163 @@ from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
+from pypdf import PdfReader # Necessário para ler os PDFs
 
 app = FastAPI(title="SST.AI - Suite Master")
 
+# Configuração para servir os PDFs se necessário
+caminho_pdfs = os.path.join(os.path.dirname(__file__), "pdfs")
+if os.path.exists(caminho_pdfs):
+    app.mount("/pdfs", StaticFiles(directory=caminho_pdfs), name="pdfs")
+
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
-# --- DADOS "MOCK" (Para funcionar sem banco de dados externo) ---
+# --- BANCO DE DADOS DE BUSCA (SQLite com FTS) ---
+DB_NAME = "dados_seguranca.db"
 
-# 1. Base de Busca (Simulada para testar)
-BASE_CONHECIMENTO = [
-    {"norma": "NR-10", "titulo": "Segurança em Instalações Elétricas", "texto": "10.2.8.2 As medidas de proteção coletiva compreendem, prioritariamente, a desenergização elétrica das instalações elétricas."},
-    {"norma": "NR-12", "titulo": "Segurança em Máquinas", "texto": "12.3.1 O empregador deve adotar medidas de proteção para o trabalho em máquinas e equipamentos, capazes de garantir a saúde e a integridade física dos trabalhadores."},
-    {"norma": "NR-35", "titulo": "Trabalho em Altura", "texto": "35.3.2 Considera-se trabalhador capacitado para trabalho em altura aquele que foi submetido e aprovado em treinamento, teórico e prático, com carga horária mínima de oito horas."},
-    {"norma": "NR-23", "titulo": "Proteção Contra Incêndios", "texto": "23.1 Todos os empregadores devem adotar medidas de prevenção de incêndios, em conformidade com a legislação estadual e as normas técnicas aplicáveis."},
-    {"norma": "NR-06", "titulo": "EPI", "texto": "6.3 A empresa é obrigada a fornecer aos empregados, gratuitamente, EPI adequado ao risco, em perfeito estado de conservação e funcionamento."}
-]
+def inicializar_banco():
+    """Lê a pasta 'pdfs' e indexa o conteúdo no SQLite"""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    # Cria tabela de busca textual (Full Text Search)
+    c.execute("CREATE VIRTUAL TABLE IF NOT EXISTS normas_fts USING fts5(titulo, conteudo, url_pdf, pagina)")
+    
+    # Verifica se já tem dados (para não reindexar toda vez que reinicia)
+    c.execute("SELECT count(*) FROM normas_fts")
+    if c.fetchone()[0] > 0:
+        conn.close()
+        return # Já está indexado
 
-# 2. Checklists Prontos
+    print("--- INICIANDO INDEXAÇÃO DE PDFs ---")
+    
+    # Lista de arquivos na pasta pdfs
+    if os.path.exists(caminho_pdfs):
+        arquivos = [f for f in os.listdir(caminho_pdfs) if f.endswith(".pdf")]
+        
+        for arq in arquivos:
+            path_completo = os.path.join(caminho_pdfs, arq)
+            try:
+                reader = PdfReader(path_completo)
+                for i, page in enumerate(reader.pages):
+                    texto = page.extract_text()
+                    if texto:
+                        # Insere cada página no banco
+                        c.execute("INSERT INTO normas_fts (titulo, conteudo, url_pdf, pagina) VALUES (?, ?, ?, ?)", 
+                                  (arq, texto, f"/pdfs/{arq}", i+1))
+                print(f"Indexado: {arq}")
+            except Exception as e:
+                print(f"Erro ao ler {arq}: {e}")
+    else:
+        # Se não tiver pasta PDF, insere dados dummy para não quebrar
+        print("Pasta 'pdfs' não encontrada. Usando modo simulação.")
+        c.execute("INSERT INTO normas_fts (titulo, conteudo, url_pdf, pagina) VALUES (?, ?, ?, ?)", 
+                  ("NR-06 Simulado", "Para os fins desta Norma Regulamentadora - NR, considera-se Equipamento de Proteção Individual - EPI, todo dispositivo ou produto, de uso individual utilizado pelo trabalhador.", "n/a", 1))
+
+    conn.commit()
+    conn.close()
+
+# Executa a indexação ao ligar o servidor
+inicializar_banco()
+
+# --- CHECKLISTS EXPANDIDOS ---
 DADOS_CHECKLISTS = {
-    "NR-10 (Elétrica)": [
-        "O prontuário das instalações elétricas está atualizado?",
-        "Os esquemas unifilares estão disponíveis e atualizados?",
-        "Existe laudo de SPDA atualizado?",
-        "Os quadros elétricos possuem sinalização de advertência?",
-        "Os trabalhadores possuem treinamento NR-10 (Básico/SEP) válido?"
+    "NR-01 - Gerenciamento de Riscos (PGR)": [
+        "O PGR está atualizado e disponível na obra/empresa?",
+        "Foi realizado o levantamento preliminar de perigos?",
+        "Os trabalhadores foram ouvidos na identificação dos riscos?",
+        "O plano de ação do PGR possui cronograma definido?",
+        "As medidas de prevenção estão sendo acompanhadas?"
     ],
-    "NR-12 (Máquinas)": [
-        "As zonas de perigo das máquinas possuem proteções fixas ou móveis?",
-        "Os dispositivos de parada de emergência estão funcionais?",
-        "Há sinalização de segurança nas máquinas?",
-        "O piso ao redor da máquina está limpo e desobstruído?",
-        "Foi realizada a Análise de Risco (HRN/Outra)?"
+    "NR-05 - CIPA": [
+        "A CIPA está constituída e dimensionada corretamente?",
+        "O processo eleitoral seguiu os prazos da norma?",
+        "As reuniões ordinárias ocorrem mensalmente com ata?",
+        "O treinamento dos cipeiros (20h) foi realizado?",
+        "O Mapa de Risco foi elaborado com participação da CIPA?"
     ],
-    "NR-35 (Altura)": [
-        "Foi emitida a Permissão de Trabalho (PT) para a atividade?",
-        "O trabalhador está utilizando cinto de segurança tipo paraquedista?",
-        "O ponto de ancoragem foi inspecionado?",
-        "A área abaixo do trabalho está isolada e sinalizada?",
-        "Os exames médicos (ASO) indicam aptidão para altura?"
+    "NR-06 - EPI": [
+        "Todos os EPIs possuem CA válido?",
+        "Existe ficha de EPI assinada por cada funcionário?",
+        "Os EPIs estão em perfeito estado de conservação?",
+        "Há treinamento registrado sobre o uso correto?",
+        "O empregador exige o uso durante as atividades?"
+    ],
+    "NR-10 - Elétrica": [
+        "O Prontuário das Instalações Elétricas (PIE) está atualizado?",
+        "Há esquemas unifilares atualizados nos quadros?",
+        "Os trabalhadores têm curso Básico (40h) e SEP (40h)?",
+        "Os quadros estão sinalizados e com bloqueio (LOTO)?",
+        "As vestimentas são adequadas (risco 2 / arco elétrico)?"
+    ],
+    "NR-11 - Movimentação de Cargas": [
+        "Os equipamentos (empilhadeira/ponte) têm manutenção em dia?",
+        "O operador possui cartão de identificação e exame médico?",
+        "A capacidade de carga está visível no equipamento?",
+        "O sinal sonoro de ré está funcionando?",
+        "Os cabos de aço e cintas estão inspecionados?"
+    ],
+    "NR-12 - Máquinas e Equipamentos": [
+        "As zonas de perigo possuem proteções fixas ou móveis intertravadas?",
+        "Os botões de emergência estão acessíveis e funcionais?",
+        "O comando bimanual é obrigatório e está funcionando?",
+        "Há sinalização de segurança em português?",
+        "Foi feita a Análise de Risco (HRN) da máquina?"
+    ],
+    "NR-13 - Vasos de Pressão e Caldeiras": [
+        "O vaso possui placa de identificação legível?",
+        "A válvula de segurança está calibrada?",
+        "O relatório de inspeção de segurança está em dia?",
+        "O operador possui treinamento de segurança na operação?",
+        "O manômetro está calibrado e com indicação de PMTA?"
+    ],
+    "NR-17 - Ergonomia": [
+        "Foi realizada a AET (Análise Ergonômica do Trabalho)?",
+        "O mobiliário permite ajuste (cadeira, mesa)?",
+        "A iluminação está adequada à atividade?",
+        "Há pausas para descanso em atividades repetitivas?",
+        "O levantamento de peso manual é compatível com o trabalhador?"
+    ],
+    "NR-18 - Construção Civil": [
+        "As áreas de vivência (banheiro, refeitório) estão adequadas?",
+        "As proteções de periferia (guarda-corpo) estão instaladas?",
+        "As escavações estão protegidas/escoradas?",
+        "Os andaimes estão fixados, nivelados e com piso completo?",
+        "A serra circular possui coifa e empurrador?"
+    ],
+    "NR-20 - Inflamáveis": [
+        "Os tanques possuem bacia de contenção?",
+        "As instalações elétricas são à prova de explosão (Ex)?",
+        "Há extintores próximos aos pontos de abastecimento?",
+        "Os trabalhadores possuem curso de NR-20 (Integração/Básico)?",
+        "Há sinalização de 'Proibido Fumar/Chamas'?"
+    ],
+    "NR-23 - Combate a Incêndio": [
+        "Os extintores estão com carga e inspeção válidas?",
+        "As saídas de emergência estão desobstruídas e sinalizadas?",
+        "A iluminação de emergência está funcionando?",
+        "A brigada de incêndio possui treinamento válido?",
+        "As portas corta-fogo fecham corretamente?"
+    ],
+    "NR-33 - Espaço Confinado": [
+        "O espaço está sinalizado e bloqueado?",
+        "Foi emitida a PET (Permissão de Entrada)?",
+        "O monitoramento de gases foi feito antes da entrada?",
+        "Existe vigia na parte externa com comunicação?",
+        "O tripé/sistema de resgate está montado?"
+    ],
+    "NR-35 - Trabalho em Altura": [
+        "A Permissão de Trabalho (PT) foi emitida?",
+        "Os trabalhadores têm ASO para altura e treinamento?",
+        "Estão usando cinto paraquedista com talabarte duplo?",
+        "O ponto de ancoragem é seguro/certificado?",
+        "A área abaixo está isolada (risco de queda de materiais)?"
     ]
 }
 
@@ -118,37 +227,113 @@ TABELA_NBR14276 = {
     'M-3': {'nome': 'Centrais Elétricas', 'base': 10, 'pct': 0.10, 'nivel': 'Avançado'}
 }
 
-# --- ROTAS ---
+TABELA_SESMT = {
+    1: [(0,49,0,0,0,0,0),(50,100,0,0,0,0,0),(101,250,0,0,0,0,0),(251,500,0,0,0,0,0),(501,1000,0,0,0,0,0),(1001,2000,1,0,0,0,1),(2001,3500,1,0,0,0,1),(3501,5000,2,1,0,0,1),(5001,9999999,2,1,0,0,1)],
+    2: [(0,49,0,0,0,0,0),(50,100,0,0,0,0,0),(101,250,0,0,0,0,0),(251,500,0,0,0,0,0),(501,1000,1,0,0,0,0),(1001,2000,1,0,0,0,1),(2001,3500,1,1,1,0,1),(3501,5000,2,1,1,0,1),(5001,9999999,2,1,1,0,1)],
+    3: [(0,49,0,0,0,0,0),(50,100,0,0,0,0,0),(101,250,0,0,0,0,0),(251,500,1,0,0,0,0),(501,1000,2,0,0,0,0),(1001,2000,3,1,0,0,1),(2001,3500,4,1,0,0,1),(3501,5000,6,2,0,0,1),(5001,9999999,8,2,0,0,1)],
+    4: [(0,49,0,0,0,0,0),(50,100,1,0,0,0,0),(101,250,2,0,0,0,0),(251,500,3,0,0,0,1),(501,1000,4,1,0,0,1),(1001,2000,5,1,0,0,1),(2001,3500,8,2,1,0,1),(3501,5000,10,3,1,0,1),(5001,9999999,10,3,1,0,1)]
+}
 
+TABELA_CIPA = {
+    1: [(0,19,0,0),(20,29,1,1),(30,50,1,1),(51,100,2,2),(101,250,2,2),(251,500,3,3),(501,1000,4,4),(1001,2500,4,4),(2501,5000,5,5),(5001,10000,6,5)],
+    2: [(0,19,0,0),(20,29,1,1),(30,50,3,3),(51,100,4,4),(101,250,4,4),(251,500,5,5),(501,1000,6,5),(1001,2500,7,6),(2501,5000,9,7),(5001,10000,10,8)],
+    3: [(0,19,0,0),(20,29,1,1),(30,50,3,2),(51,100,4,3),(101,250,5,4),(251,500,7,5),(501,1000,9,7),(1001,2500,10,8),(2501,5000,12,9),(5001,10000,15,12)],
+    4: [(0,19,0,0),(20,29,2,2),(30,50,4,3),(51,100,5,4),(101,250,6,5),(251,500,9,7),(501,1000,11,8),(1001,2500,13,10),(2501,5000,16,12),(5001,10000,18,15)]
+}
+
+LABELS_PDF = {"qtd": "Brigadistas Sugeridos", "nivel": "Nível do Treinamento", "divisao_desc": "Classificação", "memoria": "Memória de Cálculo", "obs": "Observações Técnicas", "risco": "Grau de Risco (NR-04)", "atividade": "CNAE / Atividade", "efetivos": "Membros Efetivos", "suplentes": "Membros Suplentes"}
+
+# --- ROTAS ---
 @app.get("/api/checklists-options")
 def get_checklists_options():
-    # Retorna apenas as chaves (ex: "NR-12 (Máquinas)") para o menu
     return list(DADOS_CHECKLISTS.keys())
 
 @app.post("/api/get-checklist-items")
 def get_checklist_items(req: dict):
-    # Retorna as perguntas do checklist selecionado
-    nome = req.get("nome")
-    return DADOS_CHECKLISTS.get(nome, [])
+    return DADOS_CHECKLISTS.get(req.get("nome"), [])
 
 @app.post("/api/buscar")
 def buscar_normas(d: BuscaReq):
-    # Busca simples no Mock
-    termo = d.termo.lower()
-    resultados = []
-    for item in BASE_CONHECIMENTO:
-        if termo in item['titulo'].lower() or termo in item['texto'].lower() or termo in item['norma'].lower():
-            resultados.append(item)
-    return resultados
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    try:
+        # Busca usando FTS5 e destaca o termo
+        termo = d.termo.replace('"', '""') # Sanitização simples
+        query = f"SELECT titulo, snippet(normas_fts, 1, '<b>', '</b>', '...', 15), url_pdf, pagina FROM normas_fts WHERE normas_fts MATCH ? ORDER BY rank LIMIT 20"
+        c.execute(query, (termo,))
+        res = [{"titulo": r[0], "trecho": r[1], "url": r[2], "pagina": r[3]} for r in c.fetchall()]
+    except Exception as e:
+        print(f"Erro na busca: {e}")
+        res = []
+    finally:
+        conn.close()
+    return res
+
+@app.post("/api/gerar_relatorio")
+def gerar_pdf(req: RelatorioReq):
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    
+    p.setFillColor(colors.HexColor("#1e3a8a"))
+    p.rect(0, height - 100, width, 100, fill=True, stroke=False)
+    p.setFillColor(colors.white)
+    p.setFont("Helvetica-Bold", 20)
+    p.drawString(40, height - 50, "RELATÓRIO TÉCNICO - SST")
+    p.setFont("Helvetica", 10)
+    p.drawRightString(width-40, height-50, f"Data: {datetime.now().strftime('%d/%m/%Y')}")
+    
+    p.setFillColor(colors.black)
+    y = height - 150
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(40, y, f"Documento: {req.tipo.upper()}")
+    y -= 30
+    
+    p.setFont("Helvetica", 12)
+    for k, v in req.meta.items():
+        p.drawString(40, y, f"{k}: {v}")
+        y -= 20
+    
+    y -= 20
+    p.line(40, y, width-40, y)
+    y -= 30
+    
+    if req.tipo == "checklist":
+        p.drawString(40, y, "RESULTADO DA INSPEÇÃO:")
+        y -= 20
+        p.setFont("Helvetica", 10)
+        for item, status in req.dados.items():
+            if y < 50: p.showPage(); y = height - 50
+            if "Observações" in item:
+                p.setFillColor(colors.blue); p.drawString(40, y, f"Obs: {status}")
+            else:
+                cor = colors.green if status == "Conforme" else colors.red if status == "Não Conforme" else colors.gray
+                p.setFillColor(cor); p.circle(50, y+4, 4, fill=True, stroke=False)
+                p.setFillColor(colors.black); p.drawString(60, y, f"{item[:80]} - {status}")
+            y -= 15
+    else:
+        for k, v in req.dados.items():
+            if y < 50: p.showPage(); y = height - 50
+            label = LABELS_PDF.get(k, k.capitalize())
+            if isinstance(v, dict):
+                 p.drawString(40, y, f"{label}:")
+                 y-=20
+                 for sub_k, sub_v in v.items():
+                     if sub_v > 0: p.drawString(60, y, f"- {sub_k}: {sub_v}"); y-=15
+            else:
+                p.drawString(40, y, f"{label}: {v}")
+                y -= 20
+
+    p.showPage()
+    p.save()
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=relatorio.pdf"})
 
 @app.post("/api/brigada")
 def calcular_brigada(d: BrigadaReq):
-    pop = d.funcionarios
-    div = d.divisao
+    pop, div = d.funcionarios, d.divisao
     regra = TABELA_NBR14276.get(div)
-    
-    if not regra:
-        return {"qtd": 0, "memoria": f"Erro: A divisão '{div}' não foi encontrada na tabela NBR 14276."}
+    if not regra: return {"qtd": 0, "memoria": f"Erro: Divisão '{div}' não encontrada."}
     
     if pop <= 10:
         brig = regra['base'] if pop >= regra['base'] else pop
@@ -158,66 +343,38 @@ def calcular_brigada(d: BrigadaReq):
         add = math.ceil(exc * regra['pct'])
         brig = regra['base'] + add
         mem = f"Base ({regra['base']}) + {int(regra['pct']*100)}% de {exc} (Excedente) = {brig}."
-    
     return {"qtd": brig, "nivel": regra['nivel'], "memoria": mem, "divisao_desc": regra['nome']}
-
-@app.post("/api/sesmt")
-def calcular_sesmt(d: CalculoReq):
-    # Lógica simplificada de SESMT
-    return {"equipe": {"Tec. Seg": 1, "Eng. Seg": 0}, "memoria": "Cálculo simplificado demonstrativo.", "risco": 3}
 
 @app.post("/api/cipa")
 def calcular_cipa(d: CalculoReq):
-     # Lógica simplificada de CIPA
-    return {"efetivos": 2, "suplentes": 2, "risco": 3, "memoria": "Cálculo simplificado demonstrativo."}
+    conn = sqlite3.connect(DB_NAME); c = conn.cursor()
+    # Em produção, você teria uma tabela CNAE x RISCO
+    # Simulando risco 3 para construção
+    risco = 3 if d.cnae.startswith("41") else 2 
+    
+    ef, sup = 0, 0
+    tabela = TABELA_CIPA.get(risco, [])
+    for f in tabela:
+        if f[0] <= d.funcionarios <= f[1]:
+            ef, sup = f[2], f[3]
+            break
+    if d.funcionarios > 10000: ef, sup = tabela[-1][2], tabela[-1][3]
+            
+    return {"efetivos": ef, "suplentes": sup, "risco": risco, "memoria": f"Risco {risco}, Quadro I da NR-05."}
 
-@app.post("/api/gerar_relatorio")
-def gerar_pdf(req: RelatorioReq):
-    buffer = io.BytesIO()
-    p = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
+@app.post("/api/sesmt")
+def calcular_sesmt(d: CalculoReq):
+    risco = 3 if d.cnae.startswith("41") else 2
+    eq = {"Tec. Seg": 0, "Eng. Seg": 0, "Aux. Enf": 0, "Enfermeiro": 0, "Médico": 0}
     
-    # Cabeçalho
-    p.setFillColor(colors.HexColor("#1e3a8a"))
-    p.rect(0, height - 100, width, 100, fill=True, stroke=False)
-    p.setFillColor(colors.white)
-    p.setFont("Helvetica-Bold", 20)
-    p.drawString(40, height - 50, f"RELATÓRIO: {req.tipo.upper()}")
-    
-    p.setFillColor(colors.black)
-    y = height - 150
-    p.setFont("Helvetica", 12)
-    
-    # Dados Gerais
-    p.drawString(40, y, f"Cliente: {req.meta.get('cliente')}"); y -= 20
-    p.drawString(40, y, f"Projeto: {req.meta.get('projeto')}"); y -= 40
-    
-    # Dados do Relatório
-    if req.tipo == "checklist":
-        p.setFont("Helvetica-Bold", 14); p.drawString(40, y, "ITENS INSPECIONADOS:"); y -= 20
-        p.setFont("Helvetica", 10)
-        for item, status in req.dados.items():
-            if y < 50: p.showPage(); y = height - 50
-            if status == "Conforme": cor = colors.green
-            elif status == "Não Conforme": cor = colors.red
-            else: cor = colors.gray
+    tabela = TABELA_SESMT.get(risco, [])
+    for f in tabela:
+        if f[0] <= d.funcionarios <= f[1]:
+            eq = {"Tec. Seg": f[2], "Eng. Seg": f[3], "Aux. Enf": f[4], "Enfermeiro": f[5], "Médico": f[6]}
+            break
             
-            p.setFillColor(cor)
-            p.circle(50, y+4, 4, fill=True, stroke=False)
-            p.setFillColor(colors.black)
-            p.drawString(60, y, f"{item} - {status}")
-            y -= 15
-            
-    else:
-        for k, v in req.dados.items():
-            p.drawString(40, y, f"{k}: {v}"); y -= 20
-            
-    p.showPage()
-    p.save()
-    buffer.seek(0)
-    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=relatorio.pdf"})
+    return {"equipe": eq, "risco": risco, "memoria": f"Risco {risco}, Quadro II da NR-04."}
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=10000)
-
