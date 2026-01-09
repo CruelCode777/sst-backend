@@ -4,7 +4,7 @@ import requests
 
 # --- CONFIGURAÇÃO ---
 # ⚠️ Mantenha o link do seu backend aqui
-API_URL = "https://sst-backend-cxtpxb6lsng6vjjyqnaujp.onrender.com"
+API_URL = "https://sst-ai-suite.onrender.com"
 
 st.set_page_config(page_title="SST.AI Suite", page_icon="🛡️", layout="wide")
 
@@ -348,5 +348,6 @@ else:
             
             except Exception as e:
                 st.error(f"Erro: {e}")
+
 
 
