@@ -36,25 +36,39 @@ with col2:
         if not cliente:
             st.warning("Por favor, preencha o nome do cliente.")
         else:
-            with st.spinner('O servidor está processando... (Pode demorar 1 min se estiver "frio")'):
+            with st.spinner('Processando no servidor...'):
                 try:
-                    # Prepara os dados para enviar
-                    dados = {
-                        "cliente": cliente,
-                        "projeto": projeto,
-                        "tipo": tipo_relatorio,
-                        "obs": obs
+                    # 1. TRADUÇÃO (Para o título do PDF sair bonito)
+                    # Mapeia o que está no Dropdown para o código interno do Python
+                    mapa_tipos = {
+                        "Checklist NR-12": "checklist",
+                        "Laudo Elétrico": "geral", 
+                        "Dimensionamento CIPA": "cipa"
+                    }
+                    tipo_interno = mapa_tipos.get(tipo_relatorio, "geral")
+
+                    # 2. ARRUMANDO A MALA (Estrutura exata do RelatorioReq)
+                    payload = {
+                        "tipo": tipo_interno,
+                        "meta": {
+                            "cliente": cliente,
+                            "projeto": projeto,
+                            "auditor": "Usuário Web",
+                            "setor": "Geral"
+                        },
+                        "dados": {
+                            # Aqui enviamos o conteúdo do relatório. 
+                            # Como é um teste, vamos enviar a observação como dado principal.
+                            "Conteúdo do Relatório": obs if obs else "Sem observações adicionais."
+                        }
                     }
                     
-                    # ---------------------------------------------------------
-                    # ATENÇÃO: Verifique no seu /docs qual o nome exato do endpoint
-                    # Vou assumir que é /gerar_relatorio, mas pode ser outro.
-                    # ---------------------------------------------------------
-                    response = requests.post(f"{API_URL}/api/gerar_relatorio", json=dados)
+                    # 3. ENVIO
+                    # Note que agora enviamos 'payload' em vez de 'dados' soltos
+                    response = requests.post(f"{API_URL}/api/gerar_relatorio", json=payload)
                     
                     if response.status_code == 200:
                         st.success("Relatório Gerado com Sucesso!")
-                        # Cria o botão de download
                         st.download_button(
                             label="📥 Baixar PDF Agora",
                             data=response.content,
@@ -63,10 +77,8 @@ with col2:
                         )
                     else:
                         st.error(f"Erro no servidor: {response.status_code}")
-                        st.write(response.text)
+                        # Mostra o erro detalhado se não for 200
+                        st.json(response.json())
                         
                 except Exception as e:
-
                     st.error(f"Erro de conexão: {e}")
-
-
