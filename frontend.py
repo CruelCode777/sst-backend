@@ -175,7 +175,7 @@ elif selected == "Inspeção":
 elif selected == "Brigada":
     st.subheader("🔥 Dimensionamento de Brigada (NBR 14276)")
     
-    # --- MENU EM CASCATA (DADOS) ---
+    # --- MENU EM CASCATA (DADOS DETALHADOS) ---
     OPCOES_DETALHADAS = {
         "Grupo A - Residencial": [
             "A-1: Habitação Unifamiliar (Casas térreas/sobrados)",
@@ -226,16 +226,17 @@ elif selected == "Brigada":
             "H-4: Edifício público",
             "H-5: Manicômio/Presídio"
         ],
+        # --- ATUALIZAÇÃO DETALHADA AQUI ---
         "Grupo I - Indústria": [
-            "I-1: Carga de incêndio baixa",
-            "I-2: Carga de incêndio média",
-            "I-3: Carga de incêndio alta"
+            "I-1: Baixo Risco (Até 300 MJ/m² - ex: Metalúrgica, Mecânica, Gesso, Cerâmica, Vidro)",
+            "I-2: Médio Risco (300 a 1.200 MJ/m² - ex: Bebidas, Alimentos, Cimento, Têxtil, Calçados)",
+            "I-3: Alto Risco (Acima de 1.200 MJ/m² - ex: Borracha, Plásticos, Químicos, Espumas, Tintas)"
         ],
         "Grupo J - Depósito": [
-            "J-1: Material incombustível",
-            "J-2: Carga de incêndio baixa",
-            "J-3: Carga de incêndio média",
-            "J-4: Carga de incêndio alta"
+            "J-1: Material Incombustível (Ex: Areia, Cimento, Metais, Pedras)",
+            "J-2: Baixo Risco (Até 300 MJ/m² - ex: Cerâmicas, Louças, Metais em peças)",
+            "J-3: Médio Risco (300 a 1.200 MJ/m² - ex: Alimentos, Mercadorias em geral, Livros)",
+            "J-4: Alto Risco (Acima de 1.200 MJ/m² - ex: Pneus, Plásticos, Papel, Inflamáveis)"
         ],
         "Grupo L - Explosivos": [
             "L-1: Comércio",
