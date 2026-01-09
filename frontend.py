@@ -59,7 +59,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- CABEÇALHO ---
-st.markdown('<h1 class="title-text">SST.AI <span class="blue-text">AUDITOR</span></h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="title-text">SST.AI <span class="blue-text">SUITE</span></h1>', unsafe_allow_html=True)
 
 # --- MENU DE NAVEGAÇÃO SUPERIOR ---
 selected = option_menu(
@@ -348,4 +348,5 @@ else:
             
             except Exception as e:
                 st.error(f"Erro: {e}")
+
 
