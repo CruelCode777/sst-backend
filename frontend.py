@@ -3,7 +3,7 @@ import requests
 
 # --- CONFIGURAÇÃO ---
 # ⚠️ CONFIRA SE ESTE É O SEU LINK DO RENDER (SEM BARRA NO FINAL)
-API_URL = https://sst-ai-suite.onrender.com
+API_URL = "https://sst-ai-suite.onrender.com"
 st.set_page_config(page_title="SST.AI Suite", page_icon="🛡️", layout="wide")
 
 # --- ESTILO CYBERPUNK (CSS) ---
@@ -191,6 +191,7 @@ with col2:
                     
             except Exception as e:
                 st.error(f"Erro Crítico: {e}")
+
 
 
 
