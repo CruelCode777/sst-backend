@@ -3,3 +3,5 @@ uvicorn
 pydantic
 reportlab
 python-multipart
+streamlit
+requests
