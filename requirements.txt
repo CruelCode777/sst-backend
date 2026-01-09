@@ -6,3 +6,4 @@ python-multipart
 streamlit
 requests
 streamlit-option-menu
+pypdf
