@@ -3,7 +3,7 @@ import requests
 
 # --- CONFIGURAÇÃO ---
 # MUITO IMPORTANTE: Cole aqui o link do seu Render (sem o /docs no final)
-API_URL = "https://SEU-APP-NO-RENDER.onrender.com"
+API_URL = "https://sst-ai-suite.onrender.com"
 
 st.set_page_config(page_title="SST.AI Suite", page_icon="🛡️", layout="wide")
 
@@ -66,4 +66,5 @@ with col2:
                         st.write(response.text)
                         
                 except Exception as e:
+
                     st.error(f"Erro de conexão: {e}")
