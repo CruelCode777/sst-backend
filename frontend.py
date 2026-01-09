@@ -6,7 +6,65 @@ import requests
 API_URL = "https://sst-auditor.onrender.com"  # Exemplo. Ponha o seu!
 
 st.set_page_config(page_title="SST.AI Suite", page_icon="🛡️", layout="wide")
+URL_FUNDO = "https://img.freepik.com/free-photo/futuristic-wind-energy-park-at-night_23-2149341234.jpg?w=1380"
 
+st.markdown(f"""
+<style>
+    /* 1. Imagem de Fundo Principal */
+    .stApp {{
+        background-image: url("{URL_FUNDO}");
+        background-attachment: fixed;
+        background-size: cover;
+    }}
+
+    /* 2. Escurecer o Fundo para o Texto ficar Legível (Overlay) */
+    .main .block-container {{
+        background-color: rgba(0, 0, 0, 0.85); /* Fundo Preto 85% transparente */
+        padding: 2rem;
+        border-radius: 15px;
+        border: 1px solid #1e3a8a; /* Borda Azul Tech */
+    }}
+
+    /* 3. Estilo da Barra Lateral */
+    section[data-testid="stSidebar"] {{
+        background-color: rgba(17, 24, 39, 0.95); /* Cinza Quase Preto */
+        border-right: 1px solid #374151;
+    }}
+
+    /* 4. Títulos e Textos */
+    h1, h2, h3 {{
+        color: #00e5ff !important; /* Azul Ciano Neon */
+        font-family: 'Orbitron', sans-serif; /* Fonte Futurista (se disponível) */
+    }}
+    p, label {{
+        color: #e5e7eb !important; /* Branco Gelo */
+    }}
+
+    /* 5. Botão "Gerar Relatório" (Estilo Cyberpunk) */
+    div.stButton > button {{
+        background: linear-gradient(45deg, #1e3a8a, #dc2626); /* Degradê Azul-Vermelho */
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 5px;
+        font-weight: bold;
+        transition: transform 0.2s;
+        width: 100%;
+    }}
+    div.stButton > button:hover {{
+        transform: scale(1.05); /* Efeito de Zoom ao passar o mouse */
+        box-shadow: 0 0 15px #00e5ff; /* Brilho Neon */
+    }}
+    
+    /* 6. Inputs (Caixas de Texto) */
+    .stTextInput > div > div > input {{
+        background-color: #374151;
+        color: white;
+        border: 1px solid #4b5563;
+    }}
+</style>
+""", unsafe_allow_html=True)
+# --- FIM DO BLOCO DE ESTILO ---
 st.title("🛡️ SST.AI - Suíte de Engenharia")
 st.markdown("Gerador de Documentação Técnica e Auditoria Automatizada")
 
@@ -141,5 +199,6 @@ with col2:
                         
                 except Exception as e:
                     st.error(f"Erro Crítico: {e}")
+
 
 
