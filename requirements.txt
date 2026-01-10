@@ -1,10 +1,8 @@
 fastapi
 uvicorn
 pydantic
-reportlab
 python-multipart
-streamlit
 requests
-streamlit-option-menu
 pypdf
-aiofiles
+streamlit
+streamlit-option-menu
