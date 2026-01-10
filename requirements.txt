@@ -7,3 +7,4 @@ pypdf
 streamlit
 streamlit-option-menu
 reportlab
+aiofiles
