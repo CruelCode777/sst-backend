@@ -10,89 +10,71 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
 
-# --- IMPORTAÇÕES SEGURAS (Para o servidor não travar se faltar algo) ---
-try:
-    from reportlab.pdfgen import canvas
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib import colors
-    TEM_REPORTLAB = True
-except ImportError:
-    TEM_REPORTLAB = False
+# Configuração de Logs
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# --- IMPORTAÇÕES OPCIONAIS (Evita travamento se faltar lib) ---
 try:
     from pypdf import PdfReader
     TEM_PYPDF = True
 except ImportError:
     TEM_PYPDF = False
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 # --- CONFIGURAÇÃO ---
 DB_NAME = "sst_knowledge.db"
-# URLs do seu repositório (Pasta pdfs na raiz)
+# Links do GitHub (substitua se mudar o repositório)
 GITHUB_RAW = "https://raw.githubusercontent.com/CruelCode777/sst-backend/main/pdfs/"
 GITHUB_VIEW = "https://github.com/CruelCode777/sst-backend/blob/main/pdfs/"
 
-# Arquivos que o sistema vai tentar baixar e indexar
-PDF_FILES = [
-    "NR-04.pdf", "NR-05.pdf", "NR-06.pdf", "NR-10.pdf", 
-    "NR-12.pdf", "NR-35.pdf", "NBR-14276.pdf"
-]
+# Arquivos para baixar na inicialização
+PDF_FILES = ["NR-04.pdf", "NR-05.pdf", "NR-06.pdf", "NR-10.pdf", "NR-35.pdf", "NBR-14276.pdf"]
 
-# --- TABELA BRIGADA (NBR 14276 SIMPLIFICADA) ---
+# --- TABELA DE DADOS BRIGADA (NBR 14276) ---
 TABELA_BRIGADA = {
     'A-2': {'base': 2, 'pct': 0.05, 'nivel': 'Básico', 'nome': 'Residencial Multifamiliar'},
-    'C-1': {'base': 4, 'pct': 0.05, 'nivel': 'Intermediário', 'nome': 'Comércio'},
+    'C-1': {'base': 4, 'pct': 0.05, 'nivel': 'Intermediário', 'nome': 'Comércio Geral'},
+    'C-2': {'base': 4, 'pct': 0.05, 'nivel': 'Intermediário', 'nome': 'Shopping Center'},
     'D-1': {'base': 2, 'pct': 0.05, 'nivel': 'Básico', 'nome': 'Escritório'},
+    'I-1': {'base': 4, 'pct': 0.07, 'nivel': 'Intermediário', 'nome': 'Indústria Baixo Risco'},
     'I-2': {'base': 8, 'pct': 0.07, 'nivel': 'Intermediário', 'nome': 'Indústria Médio Risco'},
-    'J-2': {'base': 4, 'pct': 0.07, 'nivel': 'Intermediário', 'nome': 'Depósito'}
+    'I-3': {'base': 10, 'pct': 0.10, 'nivel': 'Avançado', 'nome': 'Indústria Alto Risco'},
+    'J-1': {'base': 2, 'pct': 0.05, 'nivel': 'Básico', 'nome': 'Depósito Incombustível'},
+    'J-2': {'base': 4, 'pct': 0.07, 'nivel': 'Intermediário', 'nome': 'Depósito Baixo Risco'}
 }
 
-# --- BANCO DE DADOS ---
+# --- FUNÇÕES DE BANCO DE DADOS ---
 def init_db():
     try:
         conn = sqlite3.connect(DB_NAME)
         c = conn.cursor()
         c.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(titulo, conteudo, url_view)")
         
-        # Se vazio, tenta baixar do GitHub
+        # Verifica se está vazio
         c.execute("SELECT count(*) FROM docs")
         if c.fetchone()[0] == 0:
-            logger.info("Baixando PDFs do GitHub para memória...")
-            sucesso = False
-            
+            logger.info("Baixando PDFs do GitHub...")
             if TEM_PYPDF:
                 for pdf in PDF_FILES:
                     try:
-                        # Timeout para não travar o servidor
-                        r = requests.get(f"{GITHUB_RAW}{pdf}", timeout=5)
+                        r = requests.get(f"{GITHUB_RAW}{pdf}", timeout=10)
                         if r.status_code == 200:
                             reader = PdfReader(BytesIO(r.content))
                             texto = ""
                             for page in reader.pages[:10]: texto += page.extract_text() + " "
-                            
                             link_view = f"{GITHUB_VIEW}{pdf}"
                             c.execute("INSERT INTO docs VALUES (?, ?, ?)", (pdf, texto, link_view))
-                            sucesso = True
                             logger.info(f"Indexado: {pdf}")
                     except Exception as e:
-                        logger.warning(f"Erro ao indexar {pdf}: {e}")
-            
-            # Insere dados de backup se o download falhar
-            if not sucesso:
-                BACKUP = [
-                    ("NR-06", "EPI Equipamento Proteção Individual Capacete Bota", f"{GITHUB_VIEW}NR-06.pdf"),
-                    ("NR-35", "Trabalho em Altura Cinto Paraquedista 2 metros", f"{GITHUB_VIEW}NR-35.pdf"),
-                    ("NBR-14276", "Brigada de Incêndio Dimensionamento", f"{GITHUB_VIEW}NBR-14276.pdf")
-                ]
-                c.executemany("INSERT INTO docs VALUES (?, ?, ?)", BACKUP)
-                
+                        logger.warning(f"Falha ao indexar {pdf}: {e}")
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f"Erro crítico no Banco de Dados: {e}")
+        logger.error(f"Erro crítico DB: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -105,7 +87,7 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
-# --- MODELOS ---
+# --- MODELOS DE DADOS ---
 class BuscaReq(BaseModel): termo: str
 class CalcReq(BaseModel): cnae: str = ""; funcionarios: int = 0; divisao: str = ""
 class RelatorioReq(BaseModel): tipo: str; dados: dict; meta: dict
@@ -114,7 +96,7 @@ class RelatorioReq(BaseModel): tipo: str; dados: dict; meta: dict
 
 @app.get("/")
 def home():
-    return {"status": "Online", "msg": "SST API rodando"}
+    return {"status": "Online", "msg": "API SST Funcionando"}
 
 @app.post("/api/buscar")
 def buscar(d: BuscaReq):
@@ -128,81 +110,95 @@ def buscar(d: BuscaReq):
     except:
         return []
 
+# --- CALCULADORA DE BRIGADA (LÓGICA CORRIGIDA) ---
 @app.post("/api/brigada")
 def calc_brigada(d: CalcReq):
-    # Lógica de Segurança (Fallback)
-    div = d.divisao
-    if div not in TABELA_BRIGADA:
-        div = 'D-1' # Padrão seguro
+    logger.info(f"Calculando Brigada: {d.divisao} | Pop: {d.funcionarios}")
     
-    regra = TABELA_BRIGADA[div]
+    # 1. Limpeza da String (Pega "A-2" de "A-2: Residencial")
+    div_limpa = d.divisao.split(":")[0].strip()
+    
+    # 2. Busca na Tabela (Com Fallback/Segurança)
+    regra = TABELA_BRIGADA.get(div_limpa)
+    
+    if not regra:
+        # Se não achou exato, tenta achar algo parecido ou usa padrão
+        if div_limpa.startswith("A"): regra = TABELA_BRIGADA['A-2']
+        elif div_limpa.startswith("C"): regra = TABELA_BRIGADA['C-1']
+        elif div_limpa.startswith("I"): regra = TABELA_BRIGADA['I-2']
+        else: regra = TABELA_BRIGADA['D-1'] # Padrão Escritório
+        
     pop = d.funcionarios
     
+    # 3. Matemática NBR 14276
     if pop <= 10:
         qtd = regra['base'] if pop >= regra['base'] else pop
-        mem = f"População ({pop}) <= 10. Base Fixa."
+        memoria = f"População Baixa ({pop}). Qtd = Base Fixa ({qtd})."
     else:
         exc = pop - 10
-        add = math.ceil(exc * regra['pct'])
-        qtd = regra['base'] + add
-        mem = f"Base ({regra['base']}) + {int(regra['pct']*100)}% de {exc} (Excedente) = {qtd}."
+        adicional = math.ceil(exc * regra['pct'])
+        qtd = regra['base'] + adicional
+        memoria = f"Base ({regra['base']}) + {int(regra['pct']*100)}% de {exc} (Excedente) = {qtd}."
         
-    return {"qtd": qtd, "nivel": regra['nivel'], "memoria": mem, "classificacao": regra['nome']}
+    return {
+        "qtd": qtd, 
+        "nivel": regra['nivel'], 
+        "memoria": memoria, 
+        "classificacao": regra['nome']
+    }
 
 @app.post("/api/cipa")
 def calc_cipa(d: CalcReq):
-    # Lógica NR-05
     risco = 3 if d.cnae.startswith("41") else 2
     efetivos = 0
     if d.funcionarios >= 20:
         base = 1 if d.funcionarios < 50 else 2
         efetivos = base + (1 if risco >= 3 else 0)
     
-    mem = f"NR-05 Quadro I: Grau Risco {risco} para {d.funcionarios} funcionários."
-    return {"efetivos": efetivos, "suplentes": efetivos, "risco": risco, "memoria": mem}
+    return {
+        "efetivos": efetivos, 
+        "suplentes": efetivos, 
+        "risco": risco, 
+        "memoria": f"Quadro I (NR-05) - Grau de Risco {risco}"
+    }
 
 @app.post("/api/sesmt")
 def calc_sesmt(d: CalcReq):
-    # Lógica NR-04
     risco = 3 if d.cnae.startswith("41") else 2
     eq = {}
+    if d.funcionarios >= 50 and risco >= 3: eq["Tec. Seg."] = 1
+    elif d.funcionarios >= 101 and risco == 2: eq["Tec. Seg."] = 1
     
-    if d.funcionarios >= 50 and risco >= 3:
-        eq["Técnico de Seg."] = 1
-    elif d.funcionarios >= 101 and risco == 2:
-        eq["Técnico de Seg."] = 1
-        
     if d.funcionarios >= 500 and risco >= 3:
-        eq["Engenheiro de Seg."] = 1
-        eq["Técnico de Seg."] = 3
-        
-    msg = f"Dimensionamento NR-04 (Grau {risco})."
-    if not eq: msg += " Empresa desobrigada de SESMT próprio."
-        
-    return {"equipe": eq, "memoria": msg}
+        eq["Eng. Seg."] = 1
+        eq["Tec. Seg."] = 3
+
+    return {
+        "equipe": eq, 
+        "memoria": f"Quadro II (NR-04) - Grau de Risco {risco}"
+    }
 
 @app.post("/api/gerar_relatorio")
 def gerar_pdf(req: RelatorioReq):
-    if not TEM_REPORTLAB:
-        return {"erro": "Biblioteca PDF não instalada no servidor"}
-
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=A4)
     w, h = A4
     
-    # Cabeçalho Azul
+    # Cabeçalho
     p.setFillColor(colors.HexColor("#0f172a"))
     p.rect(0, h-80, w, 80, fill=1, stroke=0)
     p.setFillColor(colors.white); p.setFont("Helvetica-Bold", 16)
-    p.drawString(30, h-50, f"RELATÓRIO: {req.tipo.upper()}")
+    p.drawString(30, h-50, f"RELATÓRIO TÉCNICO: {req.tipo.upper()}")
     
     p.setFillColor(colors.black); p.setFont("Helvetica", 10)
     y = h - 100
     
+    # Metadados
     for k,v in req.meta.items():
         p.drawString(30, y, f"{k}: {v}"); y-=15
-    y-=20; p.line(30, y, w-30, y); y-=30
+    y-=10; p.line(30, y, w-30, y); y-=30
     
+    # Dados
     if req.dados:
         for k, v in req.dados.items():
             if y < 50: p.showPage(); y=h-50
