@@ -10,11 +10,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
 
-# Tenta importar pypdf
+# --- IMPORTAÇÕES SEGURAS (Para o servidor não travar se faltar algo) ---
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    TEM_REPORTLAB = True
+except ImportError:
+    TEM_REPORTLAB = False
+
 try:
     from pypdf import PdfReader
     TEM_PYPDF = True
@@ -26,12 +31,15 @@ logger = logging.getLogger(__name__)
 
 # --- CONFIGURAÇÃO ---
 DB_NAME = "sst_knowledge.db"
-# URLs reais do seu repositório
+# URLs do seu repositório (Pasta pdfs na raiz)
 GITHUB_RAW = "https://raw.githubusercontent.com/CruelCode777/sst-backend/main/pdfs/"
 GITHUB_VIEW = "https://github.com/CruelCode777/sst-backend/blob/main/pdfs/"
 
-# Lista de Arquivos para Baixar/Indexar
-PDF_FILES = ["NR-04.pdf", "NR-05.pdf", "NR-06.pdf", "NR-10.pdf", "NR-35.pdf", "NBR-14276.pdf"]
+# Arquivos que o sistema vai tentar baixar e indexar
+PDF_FILES = [
+    "NR-04.pdf", "NR-05.pdf", "NR-06.pdf", "NR-10.pdf", 
+    "NR-12.pdf", "NR-35.pdf", "NBR-14276.pdf"
+]
 
 # --- TABELA BRIGADA (NBR 14276 SIMPLIFICADA) ---
 TABELA_BRIGADA = {
@@ -44,38 +52,47 @@ TABELA_BRIGADA = {
 
 # --- BANCO DE DADOS ---
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(titulo, conteudo, url_view)")
-    
-    # Se vazio, tenta baixar do GitHub
-    c.execute("SELECT count(*) FROM docs")
-    if c.fetchone()[0] == 0:
-        logger.info("Baixando PDFs do GitHub...")
-        sucesso = False
-        if TEM_PYPDF:
-            for pdf in PDF_FILES:
-                try:
-                    r = requests.get(f"{GITHUB_RAW}{pdf}")
-                    if r.status_code == 200:
-                        reader = PdfReader(BytesIO(r.content))
-                        texto = ""
-                        for page in reader.pages[:10]: texto += page.extract_text() + " "
-                        c.execute("INSERT INTO docs VALUES (?, ?, ?)", (pdf, texto, f"{GITHUB_VIEW}{pdf}"))
-                        sucesso = True
-                except: pass
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(titulo, conteudo, url_view)")
         
-        # Se falhar o download, insere dados de emergência para a busca não quebrar
-        if not sucesso:
-            BACKUP = [
-                ("NR-06", "EPI Equipamento Proteção Individual Capacete Bota", f"{GITHUB_VIEW}NR-06.pdf"),
-                ("NR-35", "Trabalho em Altura Cinto Paraquedista 2 metros", f"{GITHUB_VIEW}NR-35.pdf"),
-                ("NBR-14276", "Brigada de Incêndio Dimensionamento", f"{GITHUB_VIEW}NBR-14276.pdf")
-            ]
-            c.executemany("INSERT INTO docs VALUES (?, ?, ?)", BACKUP)
+        # Se vazio, tenta baixar do GitHub
+        c.execute("SELECT count(*) FROM docs")
+        if c.fetchone()[0] == 0:
+            logger.info("Baixando PDFs do GitHub para memória...")
+            sucesso = False
             
-    conn.commit()
-    conn.close()
+            if TEM_PYPDF:
+                for pdf in PDF_FILES:
+                    try:
+                        # Timeout para não travar o servidor
+                        r = requests.get(f"{GITHUB_RAW}{pdf}", timeout=5)
+                        if r.status_code == 200:
+                            reader = PdfReader(BytesIO(r.content))
+                            texto = ""
+                            for page in reader.pages[:10]: texto += page.extract_text() + " "
+                            
+                            link_view = f"{GITHUB_VIEW}{pdf}"
+                            c.execute("INSERT INTO docs VALUES (?, ?, ?)", (pdf, texto, link_view))
+                            sucesso = True
+                            logger.info(f"Indexado: {pdf}")
+                    except Exception as e:
+                        logger.warning(f"Erro ao indexar {pdf}: {e}")
+            
+            # Insere dados de backup se o download falhar
+            if not sucesso:
+                BACKUP = [
+                    ("NR-06", "EPI Equipamento Proteção Individual Capacete Bota", f"{GITHUB_VIEW}NR-06.pdf"),
+                    ("NR-35", "Trabalho em Altura Cinto Paraquedista 2 metros", f"{GITHUB_VIEW}NR-35.pdf"),
+                    ("NBR-14276", "Brigada de Incêndio Dimensionamento", f"{GITHUB_VIEW}NBR-14276.pdf")
+                ]
+                c.executemany("INSERT INTO docs VALUES (?, ?, ?)", BACKUP)
+                
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Erro crítico no Banco de Dados: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -95,22 +112,28 @@ class RelatorioReq(BaseModel): tipo: str; dados: dict; meta: dict
 
 # --- ENDPOINTS ---
 
+@app.get("/")
+def home():
+    return {"status": "Online", "msg": "SST API rodando"}
+
 @app.post("/api/buscar")
 def buscar(d: BuscaReq):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("SELECT titulo, snippet(docs, 1, '<b>', '</b>', '...', 20), url_view FROM docs WHERE docs MATCH ? LIMIT 10", (d.termo,))
-    res = [{"titulo": r[0], "trecho": r[1], "url": r[2]} for r in c.fetchall()]
-    conn.close()
-    return res
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("SELECT titulo, snippet(docs, 1, '<b>', '</b>', '...', 20), url_view FROM docs WHERE docs MATCH ? LIMIT 10", (d.termo,))
+        res = [{"titulo": r[0], "trecho": r[1], "url": r[2]} for r in c.fetchall()]
+        conn.close()
+        return res
+    except:
+        return []
 
 @app.post("/api/brigada")
 def calc_brigada(d: CalcReq):
-    # Lógica de Fallback (Segurança)
+    # Lógica de Segurança (Fallback)
     div = d.divisao
     if div not in TABELA_BRIGADA:
-        # Tenta achar pelo primeiro caractere (ex: A-1 vira A-2)
-        div = next((k for k in TABELA_BRIGADA if k.startswith(div[0])), 'D-1')
+        div = 'D-1' # Padrão seguro
     
     regra = TABELA_BRIGADA[div]
     pop = d.funcionarios
@@ -128,8 +151,7 @@ def calc_brigada(d: CalcReq):
 
 @app.post("/api/cipa")
 def calc_cipa(d: CalcReq):
-    # Lógica Simplificada NR-05 (Garante retorno)
-    # 41... é construção (Risco 3), resto assumimos Risco 2
+    # Lógica NR-05
     risco = 3 if d.cnae.startswith("41") else 2
     efetivos = 0
     if d.funcionarios >= 20:
@@ -141,7 +163,7 @@ def calc_cipa(d: CalcReq):
 
 @app.post("/api/sesmt")
 def calc_sesmt(d: CalcReq):
-    # Lógica Simplificada NR-04
+    # Lógica NR-04
     risco = 3 if d.cnae.startswith("41") else 2
     eq = {}
     
@@ -154,17 +176,21 @@ def calc_sesmt(d: CalcReq):
         eq["Engenheiro de Seg."] = 1
         eq["Técnico de Seg."] = 3
         
-    msg = "Dimensionamento NR-04 Quadro II."
-    if not eq: msg = "Empresa desobrigada de SESMT próprio (apenas assistência)."
+    msg = f"Dimensionamento NR-04 (Grau {risco})."
+    if not eq: msg += " Empresa desobrigada de SESMT próprio."
         
     return {"equipe": eq, "memoria": msg}
 
 @app.post("/api/gerar_relatorio")
 def gerar_pdf(req: RelatorioReq):
+    if not TEM_REPORTLAB:
+        return {"erro": "Biblioteca PDF não instalada no servidor"}
+
     buffer = BytesIO()
     p = canvas.Canvas(buffer, pagesize=A4)
     w, h = A4
     
+    # Cabeçalho Azul
     p.setFillColor(colors.HexColor("#0f172a"))
     p.rect(0, h-80, w, 80, fill=1, stroke=0)
     p.setFillColor(colors.white); p.setFont("Helvetica-Bold", 16)
@@ -172,6 +198,7 @@ def gerar_pdf(req: RelatorioReq):
     
     p.setFillColor(colors.black); p.setFont("Helvetica", 10)
     y = h - 100
+    
     for k,v in req.meta.items():
         p.drawString(30, y, f"{k}: {v}"); y-=15
     y-=20; p.line(30, y, w-30, y); y-=30
