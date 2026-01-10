@@ -1,28 +1,29 @@
 import streamlit as st
 from streamlit_option_menu import option_menu
 import requests
+import time
 
 # ⚠️ SEU LINK DO RENDER
 API_URL = "https://sst-backend-cxtpxb6lsng6vjjyqnaujp.onrender.com"
 
-st.set_page_config(page_title="SST.AI Suite", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="SST.AI Suite", page_icon="🏗️", layout="wide")
 
 st.markdown("""
 <style>
     #MainMenu, footer, header {visibility: hidden;}
-    .stApp {background-color: #f1f5f9;}
+    .stApp {background-color: #f8fafc;}
     div.stButton > button {background-color: #0f172a; color: white; border-radius: 8px; width: 100%; font-weight: bold;}
     div.stButton > button:hover {background-color: #334155;}
     
     .card {background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px;}
     .memoria {font-family: monospace; background: #e2e8f0; padding: 10px; border-radius: 5px; font-size: 0.85em; color: #334155;}
-    .pdf-btn {background-color: #ef4444; color: white; padding: 5px 10px; text-decoration: none; border-radius: 5px; font-size: 0.8rem;}
+    .pdf-btn {background-color: #ef4444; color: white !important; padding: 5px 10px; text-decoration: none; border-radius: 5px; font-size: 0.8rem;}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("<h1 style='text-align: center; color:#0f172a;'>SST.AI <span style='color:#2563eb'>SUITE</span></h1>", unsafe_allow_html=True)
 
-# MENU SEM CHECKLIST
+# MENU
 selected = option_menu(
     menu_title=None,
     options=["Normas", "Brigada", "CIPA", "SESMT"],
@@ -32,22 +33,28 @@ selected = option_menu(
     styles={"nav-link-selected": {"background-color": "#0f172a"}}
 )
 
-# HELPER
+# FUNÇÃO DE CONEXÃO SEGURA
 def req(endpoint, data=None):
     try:
         url = f"{API_URL}{endpoint}"
-        if data: return requests.post(url, json=data, timeout=15)
-        return requests.get(url, timeout=15)
-    except: return None
+        if data: 
+            return requests.post(url, json=data, timeout=20) # Timeout aumentado
+        return requests.get(url, timeout=20)
+    except requests.exceptions.ConnectionError:
+        st.error("⏳ O Servidor está 'acordando'. Aguarde 30 segundos e clique novamente.")
+        return None
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
+        return None
 
-# --- ABA NORMAS ---
+# --- ABA 1: NORMAS ---
 if selected == "Normas":
-    st.markdown("### 🔍 Busca Inteligente (NRs e Manuais)")
-    termo = st.text_input("Digite o termo (ex: Cinto, Extintor):")
+    st.markdown("### 🔍 Busca em NRs e PDFs")
+    termo = st.text_input("Digite o termo:")
     
-    if st.button("Pesquisar na Base"):
+    if st.button("Pesquisar"):
         if termo:
-            with st.spinner("Consultando GitHub e Base de Dados..."):
+            with st.spinner("Buscando..."):
                 r = req("/api/buscar", {"termo": termo})
                 if r and r.status_code == 200:
                     dados = r.json()
@@ -61,31 +68,33 @@ if selected == "Normas":
                                 <a href="{i['url']}" target="_blank" class="pdf-btn">👁️ Ver PDF Original</a>
                             </div>
                             """, unsafe_allow_html=True)
-                    else: st.warning("Nada encontrado.")
-                else: st.error("Servidor iniciando. Tente novamente em 30s.")
+                    else: st.warning("Nenhum termo encontrado.")
 
-# --- ABA BRIGADA (MENU GIGANTE) ---
+# --- ABA 2: BRIGADA (MENU GIGANTE) ---
 elif selected == "Brigada":
     st.markdown("### 🔥 Dimensionamento NBR 14276")
     
-    # MENU CASCATA
+    # MENU CASCATA (Chave é o Grupo, Valor é a lista de divisões)
     GRUPOS = {
         "Residencial (A)": ["A-2: Multifamiliar"],
-        "Comercial (C)": ["C-1: Comércio Geral"],
+        "Comercial (C)": ["C-1: Comércio Geral", "C-2: Shopping Center"],
         "Serviço (D)": ["D-1: Escritório"],
-        "Indústria (I)": ["I-2: Médio Risco"],
-        "Depósito (J)": ["J-2: Baixo Risco"]
+        "Indústria (I)": ["I-1: Baixo Risco", "I-2: Médio Risco", "I-3: Alto Risco"],
+        "Depósito (J)": ["J-1: Incombustível", "J-2: Baixo Risco"]
     }
     
     c1, c2 = st.columns(2)
     grp = c1.selectbox("1. Selecione o Grupo", list(GRUPOS.keys()))
-    div = c2.selectbox("2. Selecione a Divisão", GRUPOS[grp])
-    cod_div = div.split(":")[0]
     
-    pop = st.number_input("População Fixa + Flutuante", min_value=1, value=50)
+    # Lista dinâmica baseada no grupo
+    div = c2.selectbox("2. Selecione a Divisão", GRUPOS[grp])
+    
+    pop = st.number_input("População Total", min_value=1, value=50)
     
     if st.button("Calcular Brigada"):
-        r = req("/api/brigada", {"funcionarios": int(pop), "divisao": cod_div})
+        # Envia o texto completo, o backend vai limpar
+        r = req("/api/brigada", {"funcionarios": int(pop), "divisao": div})
+        
         if r and r.status_code == 200:
             d = r.json()
             st.markdown(f"""
@@ -97,11 +106,12 @@ elif selected == "Brigada":
             """, unsafe_allow_html=True)
             
             # PDF
-            rp = requests.post(f"{API_URL}/api/gerar_relatorio", json={"tipo":"brigada", "meta":{"Div":div}, "dados":d})
-            if rp.status_code == 200:
-                st.download_button("📥 Baixar Relatório", rp.content, "Brigada.pdf", "application/pdf")
+            if st.button("📄 Baixar Relatório PDF"):
+                rp = requests.post(f"{API_URL}/api/gerar_relatorio", json={"tipo":"brigada", "meta":{"Divisão":div}, "dados":d})
+                if rp.status_code == 200:
+                    st.download_button("Clique aqui para baixar", rp.content, "Brigada.pdf", "application/pdf")
 
-# --- ABAS CIPA / SESMT ---
+# --- ABA 3: CIPA / SESMT ---
 elif selected in ["CIPA", "SESMT"]:
     mod = selected
     st.markdown(f"### ⚙️ Dimensionamento {mod}")
@@ -131,6 +141,7 @@ elif selected in ["CIPA", "SESMT"]:
                 st.markdown(f"<div class='memoria'>🧮 {d['memoria']}</div>", unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
             
+            # Botão PDF Simples
             rp = requests.post(f"{API_URL}/api/gerar_relatorio", json={"tipo":mod, "meta":{"CNAE":cnae}, "dados":d})
             if rp.status_code == 200:
-                st.download_button("📥 Baixar Relatório", rp.content, f"{mod}.pdf", "application/pdf")
+                st.download_button("📥 Baixar Relatório PDF", rp.content, f"{mod}.pdf", "application/pdf")
